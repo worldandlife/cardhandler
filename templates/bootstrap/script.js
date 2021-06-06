@@ -1,13 +1,5 @@
-/**
- * Bitrix component form (webgsite.ru)
- * Компонент для битрикс, создание форм
- *
- * @author    Falur <ienakaev@ya.ru>
- * @link      https://github.com/falur/bitrix.com.form
- * @copyright 2015 - 2016 webgsite.ru
- * @license   GNU General Public License http://www.gnu.org/licenses/gpl-3.0.html
- */
-var worldandlifeForm = {
+
+var CardHandler = {
 
     send: function()
     {
@@ -16,7 +8,7 @@ var worldandlifeForm = {
             url: window.location,
             dataType: 'json',
             data: {
-                method : 'checkCard' ,
+                method : 'getCardBalance' ,
                 CARD_NUMBER : $('input[name="CARD_NUMBER"]').val(),
             },
             type : 'POST',
@@ -30,8 +22,9 @@ var worldandlifeForm = {
 
                 if(response.type=='ok')
                 $("#debit").show();
+                else
+                    $("#debit").hide();
                 $(".status").html(response.type+"<br>"+response.msg);
-                $('input[name="CARD_PRICE"]').val(response.msg);
 
             },
 
@@ -47,8 +40,8 @@ var worldandlifeForm = {
             dataType: 'json',
             data: {
                 method : 'transaction' ,
-                CARD_PRICE : $('input[name="CARD_PRICE"]').val(),
                 CARD_DEBIT : $('input[name="CARD_DEBIT"]').val(),
+                CARD_NUMBER : $('input[name="CARD_NUMBER"]').val(),
             },
             type : 'POST',
             error: function (response) {
@@ -59,7 +52,9 @@ var worldandlifeForm = {
 
             success: function (response) {
 
+
                 $(".status").html(response.type+"<br>"+response.msg);
+
 
 
             },

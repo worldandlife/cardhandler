@@ -1,20 +1,11 @@
 <?php
 
-/**
- * Bitrix component form (webgsite.ru)
- * Компонент для битрикс, создание форм
- *
- * @author    Falur <ienakaev@ya.ru>
- * @link      https://github.com/falur/bitrix.com.form
- * @copyright 2015 - 2016 webgsite.ru
- * @license   GNU General Public License http://www.gnu.org/licenses/gpl-3.0.html
- */
 
 use Bitrix\Main\Application;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Web\HttpClient;
 
-class FormComponent extends CBitrixComponent
+class CardHandlerComponent extends CBitrixComponent
 {
     /**
      * Массив с ошибками валидации
@@ -34,6 +25,13 @@ class FormComponent extends CBitrixComponent
     {
         global $APPLICATION;
         return $APPLICATION;
+    }
+
+
+    protected function gUser()
+    {
+        global $USER;
+        return $USER;
     }
 
     /**
@@ -94,17 +92,31 @@ class FormComponent extends CBitrixComponent
         $request = $this->request();
 
         foreach ($this->getFormFields() as $field) {
-            if ($field['REQUIRED'] == 'Y' && !$request->getPost($field['NAME']) && $field['TYPE'] != 'file') {
+            if ($field['REQUIRED'] == 'Y' && !$request->getPost($field['NAME'])) {
                 $this->errorsValidate[] = $this->arParams['ERROR_FIELD_MSG'] . ': ' . $field['LABEL'];
 
                 $validate = false;
             }
 
-            if ($field['REQUIRED'] == 'Y' && $field['TYPE'] == 'file' && !isset($_FILES[$field['NAME']])) {
+        }
+
+        return $validate;
+    }
+    /**
+     * Производит проверку данных
+     */
+    protected function validateOverride($field_name)
+    {
+        $validate = true;
+        $request = $this->request();
+
+        foreach ($this->getFormFields() as $field) {
+            if ($field['REQUIRED'] == 'Y' && !$request->getPost($field['NAME']) && $field['NAME']==$field_name) {
                 $this->errorsValidate[] = $this->arParams['ERROR_FIELD_MSG'] . ': ' . $field['LABEL'];
 
                 $validate = false;
             }
+
         }
 
         return $validate;
@@ -120,15 +132,6 @@ class FormComponent extends CBitrixComponent
         return $this->errorsValidate;
     }
 
-    /**
-     * Проверяет запрос на post и ajax
-     *
-     * @return boolean
-     */
-    protected function isPostData()
-    {
-        return $this->request()->isPost() && $this->request()->isAjaxRequest();
-    }
 
     /**
      * Возвращает массив с полями формы
@@ -157,102 +160,26 @@ class FormComponent extends CBitrixComponent
 
         return $formFields;
     }
-
-
     /**
-     * Сохраняет результаты в инфоблок
+     * Проверяет запрос на post и ajax
+     *
+     * @return boolean
      */
-    protected function saveInIblock()
+    protected function isPostData()
     {
-        if ($this->arParams['IS_SAVE_TO_IBLOCK'] == 'Y') {
-            Loader::includeModule('iblock');
-
-            $mapping = $this->getAddIblockMapping();
-
-            if (!empty($mapping)) {
-                $fields = [];
-
-                foreach ($mapping as $iblockField => $formField) {
-                    if (stripos($iblockField, 'PROPERTY_') !== false) {
-                        $propName = str_replace('PROPERTY_', '', $iblockField);
-                        $fields['PROPERTY_VALUES'][$propName] = $this->getMacrosValue($formField);
-                    } else {
-                        $fields[$iblockField] = $this->getMacrosValue($formField);
-                    }
-                }
-
-                $fields['IBLOCK_ID'] = $this->arParams['IBLOCK_ID'];
-
-                if (!isset($fields['NAME'])) {
-                    throw new Exception('NAME is required field');
-                }
-            } else {
-                $data = CEventMessage::GetByID($this->arParams['EVENT_ID'])->Fetch();
-                $text = $data['MESSAGE'];
-
-                foreach ($this->getFormFields() as $field) {
-                    $text = str_replace(
-                        '#' . $field['NAME'] . '#',
-                        $this->request()->getPost($field['NAME']),
-                        $text
-                    );
-                }
-
-                $fields = [
-                    'NAME' => $data['SUBJECT'] . ': ' . date('d.m.Y H:i:s'),
-                    'IBLOCK_SECTION_ID' => false,
-                    'IBLOCK_ID' => $this->arParams['IBLOCK_ID'],
-                    'PREVIEW_TEXT' => $text,
-
-                ];
-
-                foreach ($this->files as $id => $file) {
-                    if ('PREVIEW_PICTURE' == $id || 'DETAIL_PICTURE' == $id) {
-                        $fields[$id] = $file;
-                    } else {
-                        $fields['PROPERTY_VALUES'][$id] = $file;
-                    }
-                }
-            }
-
-            $fields['IBLOCK_SECTION_ID'] = isset($fields['IBLOCK_SECTION_ID'])
-                ? $fields['IBLOCK_SECTION_ID']
-                : false;
-
-            $fields['CODE'] = isset($fields['CODE']) ? $fields['CODE'] : CUtil::translit($fields['NAME'], 'ru');
-            $fields['ACTIVE'] = 'N';
-            $el = new CIBlockElement;
-            $el->Add($fields);
-        }
+        return $this->request()->isPost() && $this->request()->isAjaxRequest();
     }
 
-    protected function getAddIblockMapping()
-    {
-        if (!isset($this->arParams['ADD_IBLOCK_MAPPING']) || empty($this->arParams['ADD_IBLOCK_MAPPING'])) {
-            return [];
-        }
-
-        $res = [];
-
-        foreach ($this->arParams['ADD_IBLOCK_MAPPING'] as $item) {
-            list($iblock, $field) = explode('|', $item);
-
-            $res[$iblock] = $field;
-        }
-
-        return $res;
-    }
 
     /**
      * проверка на принадлежность к группе
      */
     protected function isInGroup($groups)
     {
-        global $USER;
         // массив групп, которых нужно проверить доступность пользователя
         $arGroupAvailable = $groups;
         // массив групп, в которых состоит пользователь
-        $arGroups = CUser::GetUserGroup($USER->GetID());
+        $arGroups = CUser::GetUserGroup($this->gUser()->GetID());
         $result_intersect = array_intersect($arGroupAvailable, $arGroups);
         // далее проверяем, если пользователь вошёл хотя бы в одну из групп, то позволяем ему что-либо делать
         if (!empty($result_intersect))
@@ -263,74 +190,108 @@ class FormComponent extends CBitrixComponent
     }
 
 
-
-    function checkCard($value)
+    protected function getCardBalance($value)
     {
-        if(empty($value))
-            return false;
         $arFields = array();
         Loader::includeModule('iblock');
 
-            $arSelect = array("ID", "IBLOCK_ID", "NAME", "DATE_ACTIVE_FROM", "PROPERTY_CARD_PRICE");
-            $arFilter = array("IBLOCK_ID" => 4, "ACTIVE" => "N", array("=PROPERTY_CARD_NUMBER" => $value));
-            $res = CIBlockElement::GetList(array(), $arFilter, false, false, $arSelect);
-            while ($ob = $res->GetNext()) {
-                $arFields = $ob;
-            }
-            if(empty($arFields))
-                return false;
-            else
-                return $arFields['PROPERTY_CARD_PRICE_VALUE'];
-
-
-    }
-
-
-    function transaction($sum, $debitSum)
-    {
-        if($sum >= $debitSum)
-        {
-            $sum -=$debitSum;
-
-
-        $ELEMENT_ID = 105;  // код элемента
-        $PROPERTY_CODE = "CARD_PRICE";  // код свойства
-        $PROPERTY_VALUE = "1000";  // значение свойства
-        Loader::includeModule('iblock');
-        // Установим новое значение для данного свойства данного элемента
-        CIBlockElement::SetPropertyValuesEx($ELEMENT_ID, 4, array($PROPERTY_CODE => $sum));
-
+        $arSelect = array("ID", "IBLOCK_ID", "NAME", "DATE_ACTIVE_FROM", "PROPERTY_CARD_PRICE");
+        $arFilter = array("IBLOCK_ID" => 4, "ACTIVE" => "N", array("=PROPERTY_CARD_NUMBER" => $value));
+        $res = CIBlockElement::GetList(array(), $arFilter, false, false, $arSelect);
+        while ($ob = $res->GetNext()) {
+            $arFields = $ob;
         }
+            return $arFields['PROPERTY_CARD_PRICE_VALUE'];
+    }
+    protected function getCardElementId($value)
+    {
+        $arFields = array();
+        Loader::includeModule('iblock');
 
+        $arSelect = array("ID", "IBLOCK_ID", "NAME", "DATE_ACTIVE_FROM", "PROPERTY_CARD_PRICE");
+        $arFilter = array("IBLOCK_ID" => 4, "ACTIVE" => "N", array("=PROPERTY_CARD_NUMBER" => $value));
+        $res = CIBlockElement::GetList(array(), $arFilter, false, false, $arSelect);
+        while ($ob = $res->GetNext()) {
+            $arFields = $ob;
+        }
+        return $arFields['ID'];
+    }
+
+    protected function transaction($cardNumber, $debitSum)
+    {
+        $balance = $this->getCardBalance($cardNumber);
+        if ($balance >= $debitSum && $debitSum>0) {
+            $balance -= $debitSum;
+
+            $ELEMENT_ID = $this->getCardElementId($cardNumber);  // код элемента
+            $PROPERTY_CODE = "CARD_PRICE";  // код свойства
+            Loader::includeModule('iblock');
+            // Установим новое значение для данного свойства данного элемента
+            CIBlockElement::SetPropertyValuesEx($ELEMENT_ID, 4, array($PROPERTY_CODE => 0));
+
+            return true;
+        }
+        return false;
     }
 
 
-    public function switcher ($method) {
+    public function switcher($method)
+    {
 
 
         switch ($method) {
 
-            case "checkCard":
-                $res = self::checkCard($this->request()->getPost('CARD_NUMBER'));
+            case "getCardBalance":
+                if (!$this->validateOverride('CARD_NUMBER')) {
+                    $this->jsonResponse([
+                        'msg' => implode('<br>', $this->getErrorsValidate()),
+                        'type' => 'error'
+                    ]);
+
+                    return;
+                }
+                $res = self::getCardBalance($this->request()->getPost('CARD_NUMBER'));
+                if (empty($res)) {
+                    $this->jsonResponse([
+                        'msg' => $this->arParams['ERROR_CARD_NOT_FOUND'],
+                        'type' => 'error'
+                    ]);
+                }
+                $this->jsonResponse([
+                    'msg' => $res,
+                    'type' => 'ok'
+                ]);
                 break;
             case "transaction":
-                $res = self::transaction($this->request()->getPost('CARD_PRICE'),
-                    $this->request()->getPost('CARD_DEBIT'));
+                if (!$this->validate()) {
+                    $this->jsonResponse([
+                        'msg' => implode('<br>', $this->getErrorsValidate()),
+                        'type' => 'error'
+                    ]);
+
+                    return;
+                }
+                $res = self::transaction($this->request()->getPost('CARD_NUMBER'), $this->request()->getPost('CARD_DEBIT'));
+                if (empty($res)) {
+                    $this->jsonResponse([
+                        'msg' => $this->arParams['ERROR_DEBIT_SUM'],
+                        'type' => 'error'
+                    ]);
+                }
+                $this->jsonResponse([
+                    'msg' => $res,
+                    'type' => 'ok'
+                ]);
+
                 break;
         }
 
-        return $res;
     }
+
     public function executeComponent()
     {
 //        if (!$this->isInGroup($this->arParams['GROUPS_ID']))
 //            return;
-
-
-
-
-
-
 
 
         if ($this->isPostData()) {
@@ -339,14 +300,7 @@ class FormComponent extends CBitrixComponent
 //                return;
 //            }
 //
-//            if (!$this->validate()) {
-//                $this->jsonResponse([
-//                    'msg' => implode('<br>', $this->getErrorsValidate()),
-//                    'type' => 'error'
-//                ]);
-//
-//                return;
-//            }
+
 //
 //            $this->sendMail();
 //            $this->saveInIblock();
@@ -355,28 +309,19 @@ class FormComponent extends CBitrixComponent
 //                'type' => 'ok'
 //            ]);
 
-                $result = $this->switcher($this->request()->getPost('method'));
-                if(!$result)
-                {
-                    $this->jsonResponse([
-                        'msg' => "Ошибка, такой карты не существует",
-                        'type' => 'error'
-                    ]);
-                }
+            $this->switcher($this->request()->getPost('method'));
 
-                $this->jsonResponse([
-                'msg' => $result,
-                'type' => 'ok'
-            ]);
+
 
 
             return;
         }
 
-//        $this->arResult['FORM_FIELDS_HIDDEN'] = [
-//            'EVENT_ID' => $this->arParams['EVENT_ID'],
-//            'FORM_ID' => $this->arParams['FORM_ID']
-//        ];
+        $this->arResult['FORM_FIELDS'] = $this->getFormFields();
+        $this->arResult['FORM_FIELDS_HIDDEN'] = [
+            'EVENT_ID' => $this->arParams['EVENT_ID'],
+            'FORM_ID' => $this->arParams['FORM_ID']
+        ];
 
         $this->includeComponentTemplate();
     }
