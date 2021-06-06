@@ -2,31 +2,16 @@
 
 if (!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED !== true) die();
 echo '<pre>';
-print_r($arResult);
+print_r($arParams);
 echo '</pre>';
 ?>
-
-
-<div class="status"></div>
-
-
-
-<div id="<?= $arParams['FORM_ID'] ?>-msg"></div>
-
-<form method="post" id="<?= $arParams['FORM_ID'] ?>">
-<? foreach ($arResult['FORM_FIELDS_HIDDEN'] as $name => $value): ?>
-    <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
-<? endforeach; ?>
-
 <? foreach ($arResult['FORM_FIELDS'] as $field): ?>
     <? if($field['TYPE'] == 'text' && $field['NAME'] == 'CARD_DEBIT' ):?>
         <div style="display: none" id="debit">
         <div class="form-group">
-
             <label for="<?= $field['NAME'] ?>">
                 <?= $field['LABEL'] ?>:
             </label>
-
             <input onkeyup="this.value = this.value.replace(/[^\d]/g,'');" type="<?= $field['TYPE'] ?>"
                    class="form-control <?= $field['HTML_CLASS'] ?>"
                    id="<?= $field['NAME'] ?>"
@@ -43,7 +28,6 @@ echo '</pre>';
 		<label for="<?= $field['NAME'] ?>">
             <?= $field['LABEL'] ?>:
         </label>
-
 		<input onkeyup="this.value = this.value.replace(/[^\d]/g,'');" type="<?= $field['TYPE'] ?>"
 			   class="form-control <?= $field['HTML_CLASS'] ?>"
 			   id="<?= $field['NAME'] ?>"
@@ -56,9 +40,4 @@ echo '</pre>';
 	</div>
     <? endif; ?>
 <? endforeach; ?>
-
-
-
-
-
-</form>
+<div class="status"></div>

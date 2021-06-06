@@ -16,6 +16,21 @@ class CardHandlerComponent extends CBitrixComponent
 
 
     /**
+     * Проверка наличия модулей требуемых для работы компонента
+     * @return bool
+     * @throws Exception
+     */
+    private function checkModules()
+    {
+        if (!Loader::includeModule('iblock')
+        ) {
+            throw new \Exception('Не загружены модули необходимые для работы компонента');
+        }
+
+        return true;
+    }
+
+    /**
      * Возарвщвет глобальный класс приложения битрикс
      *
      * @return CMain
@@ -102,6 +117,7 @@ class CardHandlerComponent extends CBitrixComponent
 
         return $validate;
     }
+
     /**
      * Производит проверку данных
      */
@@ -111,7 +127,7 @@ class CardHandlerComponent extends CBitrixComponent
         $request = $this->request();
 
         foreach ($this->getFormFields() as $field) {
-            if ($field['REQUIRED'] == 'Y' && !$request->getPost($field['NAME']) && $field['NAME']==$field_name) {
+            if ($field['REQUIRED'] == 'Y' && !$request->getPost($field['NAME']) && $field['NAME'] == $field_name) {
                 $this->errorsValidate[] = $this->arParams['ERROR_FIELD_MSG'] . ': ' . $field['LABEL'];
 
                 $validate = false;
@@ -160,6 +176,7 @@ class CardHandlerComponent extends CBitrixComponent
 
         return $formFields;
     }
+
     /**
      * Проверяет запрос на post и ajax
      *
@@ -190,44 +207,101 @@ class CardHandlerComponent extends CBitrixComponent
     }
 
 
-    protected function getCardBalance($value)
+    //
+    function saveInIblock($props)
     {
-        $arFields = array();
-        Loader::includeModule('iblock');
+        // это подключит нужный класс для работы с инфоблоком
+        global $USER;
+        // обязательно указываем класс
+        $el = new CIBlockElement;
+        $arLoadProductArray = array(
+            // обязательно нужно указать дату начала активности элемента
+            "ACTIVE_FROM" => date('d.m.Y H:i:s'),
+            // указываем какой пользователь добавил элемент
+            "MODIFIED_BY" => $USER->GetID(),
+            // В корне или нет
+            "IBLOCK_SECTION_ID" => false,
+            "IBLOCK_ID" => 5,
+            //  собственно сам id блока куда будем добавлять новый элемент
+            "NAME" => 'Списание по карте № ' . $props['CARD_NUMBER'],
+            // активен или  N не активен
+            "ACTIVE" => "N",
+            // Добавим нашему элементу заданные свойства
+            "PROPERTY_VALUES" => $props,
+            // ссылка на детальную картинку
+        );
+        // с помощью Add добавляем новый элемент
+        $el->Add($arLoadProductArray);
 
-        $arSelect = array("ID", "IBLOCK_ID", "NAME", "DATE_ACTIVE_FROM", "PROPERTY_CARD_PRICE");
-        $arFilter = array("IBLOCK_ID" => 4, "ACTIVE" => "N", array("=PROPERTY_CARD_NUMBER" => $value));
-        $res = CIBlockElement::GetList(array(), $arFilter, false, false, $arSelect);
-        while ($ob = $res->GetNext()) {
-            $arFields = $ob;
-        }
-            return $arFields['PROPERTY_CARD_PRICE_VALUE'];
+
     }
-    protected function getCardElementId($value)
+
+    protected function getCardHistoryByNumber($number)
     {
         $arFields = array();
-        Loader::includeModule('iblock');
+        $arSelect = array(
+            "ID",
+            "IBLOCK_ID",
+            "NAME",
+            "DATE_ACTIVE_FROM",
+            "PROPERTY_CARD_NUMBER",
+            "PROPERTY_INITIAL_CARD_PRICE",
+            "PROPERTY_DEBIT_CARD_PRICE",
+            "PROPERTY_REMAINING_CARD_PRICE"
 
+        );
+        $arFilter = array("IBLOCK_ID" => 5, "ACTIVE" => "N", array("=PROPERTY_CARD_NUMBER" => $number));
+        $res = CIBlockElement::GetList(array(), $arFilter, false, false, $arSelect);
+        while ($ob = $res->GetNext()) {
+            $arFields[] = $ob;
+        }
+        return $arFields;
+    }
+
+    protected function getCardFieldsByNumber($number)
+    {
+        $arFields = array();
         $arSelect = array("ID", "IBLOCK_ID", "NAME", "DATE_ACTIVE_FROM", "PROPERTY_CARD_PRICE");
-        $arFilter = array("IBLOCK_ID" => 4, "ACTIVE" => "N", array("=PROPERTY_CARD_NUMBER" => $value));
+        $arFilter = array("IBLOCK_ID" => 4, "ACTIVE" => "N", array("=PROPERTY_CARD_NUMBER" => $number));
         $res = CIBlockElement::GetList(array(), $arFilter, false, false, $arSelect);
         while ($ob = $res->GetNext()) {
             $arFields = $ob;
         }
-        return $arFields['ID'];
+        return $arFields;
+    }
+
+    protected function getCardBalance($number)
+    {
+        $res = $this->getCardFieldsByNumber($number);
+        return $res['PROPERTY_CARD_PRICE_VALUE'];
+    }
+
+    protected function getCardElementId($number)
+    {
+        $res = $this->getCardFieldsByNumber($number);
+        return $res['ID'];
     }
 
     protected function transaction($cardNumber, $debitSum)
     {
         $balance = $this->getCardBalance($cardNumber);
-        if ($balance >= $debitSum && $debitSum>0) {
+        $initialBalance = $balance;
+        if ($balance >= $debitSum && $debitSum > 0) {
             $balance -= $debitSum;
 
             $ELEMENT_ID = $this->getCardElementId($cardNumber);  // код элемента
             $PROPERTY_CODE = "CARD_PRICE";  // код свойства
-            Loader::includeModule('iblock');
+            $balance = strval($balance);
             // Установим новое значение для данного свойства данного элемента
-            CIBlockElement::SetPropertyValuesEx($ELEMENT_ID, 4, array($PROPERTY_CODE => 0));
+            CIBlockElement::SetPropertyValuesEx($ELEMENT_ID, 4, array($PROPERTY_CODE => $balance));
+
+            $props = [
+                'CARD_NUMBER' => $cardNumber,
+                'INITIAL_CARD_PRICE' => $initialBalance,
+                'DEBIT_CARD_PRICE' => $debitSum,
+                'REMAINING_CARD_PRICE' => $balance
+            ];
+            $this->saveInIblock($props);
 
             return true;
         }
@@ -250,7 +324,7 @@ class CardHandlerComponent extends CBitrixComponent
 
                     return;
                 }
-                $res = self::getCardBalance($this->request()->getPost('CARD_NUMBER'));
+                $res = $this->getCardBalance($this->request()->getPost('CARD_NUMBER'));
                 if (empty($res)) {
                     $this->jsonResponse([
                         'msg' => $this->arParams['ERROR_CARD_NOT_FOUND'],
@@ -271,15 +345,28 @@ class CardHandlerComponent extends CBitrixComponent
 
                     return;
                 }
-                $res = self::transaction($this->request()->getPost('CARD_NUMBER'), $this->request()->getPost('CARD_DEBIT'));
-                if (empty($res)) {
+                $res = $this->transaction($this->request()->getPost('CARD_NUMBER'), $this->request()->getPost('CARD_DEBIT'));
+                if (!$res) {
                     $this->jsonResponse([
                         'msg' => $this->arParams['ERROR_DEBIT_SUM'],
                         'type' => 'error'
                     ]);
                 }
+                $history = $this->getCardHistoryByNumber($this->request()->getPost('CARD_NUMBER'));
+                $msg = '';
+                foreach ($history as $item) {
+                    $msg .= '<tr></tr><td>' . $item['DATE_ACTIVE_FROM'] . '</td>' .
+                        '<td>' . $item['PROPERTY_INITIAL_CARD_PRICE_VALUE'] . '</td>' .
+                        '<td>' . $item['PROPERTY_DEBIT_CARD_PRICE_VALUE'] . '</td>' .
+                        '<td>' . $item['PROPERTY_REMAINING_CARD_PRICE_VALUE'] . '</td></tr>';
+                }
                 $this->jsonResponse([
-                    'msg' => $res,
+                    'msg' => '<table><caption>' . $this->arParams['SUCCESS_MSG'] . '</caption><tr>
+                            <th>Дата</th>
+                            <th>Изначально</th>
+                            <th>Списано</th>
+                            <th>Осталось</th>
+                            </tr>' . $msg . '</table>',
                     'type' => 'ok'
                 ]);
 
@@ -290,39 +377,14 @@ class CardHandlerComponent extends CBitrixComponent
 
     public function executeComponent()
     {
-//        if (!$this->isInGroup($this->arParams['GROUPS_ID']))
-//            return;
-
-
+        $this->checkModules();
+        if (!$this->isInGroup($this->arParams['ACCESS_PARAMS']))
+            return;
         if ($this->isPostData()) {
-
-//            if ($this->arParams['FORM_ID'] != $this->request()->getPost('FORM_ID')) {
-//                return;
-//            }
-//
-
-//
-//            $this->sendMail();
-//            $this->saveInIblock();
-//            $this->jsonResponse([
-//                'msg' => $this->arParams['SUCCESS_MSG'],
-//                'type' => 'ok'
-//            ]);
-
             $this->switcher($this->request()->getPost('method'));
-
-
-
-
             return;
         }
-
         $this->arResult['FORM_FIELDS'] = $this->getFormFields();
-        $this->arResult['FORM_FIELDS_HIDDEN'] = [
-            'EVENT_ID' => $this->arParams['EVENT_ID'],
-            'FORM_ID' => $this->arParams['FORM_ID']
-        ];
-
         $this->includeComponentTemplate();
     }
 }
